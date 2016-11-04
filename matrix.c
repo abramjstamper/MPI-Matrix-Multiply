@@ -79,8 +79,8 @@ int main(int argc, char **argv) {
   int subRowA = 1;
   int subMiddleNums = 4;
   int subColB = 1;
-  int row = 4;
-  int col = 4;
+  int row = 16;
+  int col = 16;
   int ARowsPerProc = row / num_procs;
   int BColsPerProc = col / num_procs;
   int subA[col * subRowA];
