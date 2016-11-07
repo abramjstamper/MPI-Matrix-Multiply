@@ -3,8 +3,8 @@ import random
 
 outputFileName = "a.txt"
 output = ""
-col = 1024;
-row = 1024;
+col = 256;
+row = 256;
 
 for i in range(row):
   for j in range(col):
