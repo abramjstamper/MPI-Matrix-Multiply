@@ -59,7 +59,8 @@ void mat_mult(int *c, int *a, int *b, int aRows, int rowsBColsA, int colsB, int 
   for (int i = 0; i < aRows; i++) {
     for (int j = 0; j < colsB; j++) {
       for (int k = 0; k < rowsBColsA; k++) {
-        MAT_ELT(c, colsB, i, j + startCol) += MAT_ELT(a, rowsBColsA, i, k) * MAT_ELT(b, colsB, k, j);
+        MAT_ELT(c, rowsBColsA, i, j + startCol) += MAT_ELT(a, rowsBColsA, i, k) * MAT_ELT(b, colsB, k, j);
+        //printf("i %i - j %i - k %i\n", i, j, k);
       }
     }
   }
@@ -76,15 +77,13 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   printf("%d: hello (p=%d)\n", rank, num_procs);
 
-  int subRowA = 1;
-  int subMiddleNums = 4;
-  int subColB = 1;
-  int row = 16;
-  int col = 16;
+  int subMiddleNums = 1024;
+  int row = 1024;
+  int col = 1024;
   int ARowsPerProc = row / num_procs;
   int BColsPerProc = col / num_procs;
-  int subA[col * subRowA];
-  int subB[row * subColB];
+  int subA[col * ARowsPerProc];
+  int subB[row * BColsPerProc];
   int C[row * col];
   memset(C, 0, sizeof(C));
 
@@ -94,7 +93,7 @@ int main(int argc, char **argv) {
     FILE *fp;
     char buffer[5];
     int A[row * col];
-    int B[num_procs][row * subColB];
+    int B[num_procs][row * BColsPerProc];
 
     //Read inputs for Matrix A
     fp = fopen("a.txt", "r");
@@ -114,9 +113,9 @@ int main(int argc, char **argv) {
     int int_buffer;
     for (int i = 0; i < row; i++) {
       for (int j = 0; j < num_procs; j++) {
-        for (int k = 0; k < subColB; k++) {
+        for (int k = 0; k < BColsPerProc; k++) {
           fscanf(fp, "%d", &int_buffer);
-          B[j][(i * subColB) + k] = int_buffer;
+          B[j][(i * BColsPerProc) + k] = int_buffer;
         }
       }
     }
@@ -125,23 +124,23 @@ int main(int argc, char **argv) {
 
     printf("STATUS: Sending initial values to processors\n");
     for (int i = 1; i < num_procs; i++) {
-      MPI_Send((void *) &A[convert2D(col, i * subColB, 0)], col * subRowA, MPI_INT, i, 0, MPI_COMM_WORLD);
+      MPI_Send((void *) &A[convert2D(col, i * BColsPerProc, 0)], col * ARowsPerProc, MPI_INT, i, 0, MPI_COMM_WORLD);
       printf("MPI: %i sent Matrix A %i\n", i, A[convert2D(col, i, 0)]);
 
-      MPI_Send((void *) &B[i][0], subColB * row, MPI_INT, i, 0, MPI_COMM_WORLD);
+      MPI_Send((void *) &B[i][0], BColsPerProc * row, MPI_INT, i, 0, MPI_COMM_WORLD);
       printf("MPI: %i sent Matrix B %i\n", i, A[convert2D(col, i, 0)]);
     }
-    memcpy(&subA, &A, sizeof(subRowA) * col * subRowA);
+    memcpy(&subA, &A, sizeof(ARowsPerProc) * col * ARowsPerProc);
     printf("MPI: %i sent %i\n", rank, A[convert2D(col, 0, 0)]);
-    memcpy(&subB, &B, sizeof(subRowA) * row * subColB);
+    memcpy(&subB, &B, sizeof(ARowsPerProc) * row * BColsPerProc);
     printf("MPI: %i sent %i\n", rank, A[convert2D(col, 0, 0)]);
     printf("STATUS: Finished sending initial values to processors\n");
   } else {
     MPI_Status status;
-    MPI_Recv(&subA, col * subRowA, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+    MPI_Recv(&subA, col * ARowsPerProc, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
     printf("MPI: %i received Matrix A %i\n", rank, subA[0]);
 
-    MPI_Recv(&subB, row * subColB, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+    MPI_Recv(&subB, row * BColsPerProc, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
     printf("MPI: %i received Matrix B %i\n", rank, subA[0]);
     printf("STATUS: Finished receiving initial values to processor %i\n", rank);
   }
@@ -149,15 +148,15 @@ int main(int argc, char **argv) {
 
   //Matrix Multiplication Step
   //init Matrix C
-  int subC[col * subRowA];
+  int subC[col * ARowsPerProc];
   memset(subC, 0, sizeof(subC));
 
   //Multiply
-  //mat_mult((int *)C, (int *)subA, (int *)subB, 4, subColB, 4);
+  //mat_mult((int *)C, (int *)subA, (int *)subB, 4, BColsPerProc, 4);
 
-//  mat_print("A", (int *) subA, subRowA, col);
+//  mat_print("A", (int *) subA, ARowsPerProc, col);
   MPI_Barrier(MPI_COMM_WORLD);
-//  mat_print("B", (int *) subB, row, subColB);
+//  mat_print("B", (int *) subB, row, BColsPerProc);
   int rank_next = rank + 1;
   int rank_prev = rank - 1;
 
@@ -172,18 +171,18 @@ int main(int argc, char **argv) {
   for (int p = 0; p < num_procs; p++) {
     printf("STATUS: multiplying slice B - %i\n", p);
 
-
-    mat_mult((int *) subC, (int *) subA, (int *) subB, subRowA, subMiddleNums, subColB, c_offset);
+    mat_mult((int *) subC, (int *) subA, (int *) subB, ARowsPerProc, subMiddleNums, BColsPerProc, c_offset);
     //rotate B
     MPI_Status status;
     //printf("%i sending subB to %i\n", rank, rank_next);
-    MPI_Sendrecv(&subB, row * subColB, MPI_INT, rank_prev, 0, &subB, row * subColB, MPI_INT, rank_next, 0,
+    MPI_Sendrecv(&subB, row * BColsPerProc, MPI_INT, rank_prev, 0, &subB, row * BColsPerProc, MPI_INT, rank_next, 0,
                  MPI_COMM_WORLD, &status);
     MPI_Barrier(MPI_COMM_WORLD);
-    c_offset = (1 + c_offset) * BColsPerProc;
+    c_offset += BColsPerProc;
     if(c_offset % col == 0){
       c_offset = 0;
     }
+    printf("rank %i - c_offset %i\n", rank, c_offset);
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
@@ -191,15 +190,15 @@ int main(int argc, char **argv) {
   MPI_Request request;
   if(rank == rankForIO){
     //gather rankforIO's elements from subC
-    for(int a = 0; a < col * subRowA; a++){
+    for(int a = 0; a < col * ARowsPerProc; a++){
         C[a] = subC[a];
     }
     //Gather rest of of subC from other procs
     for(int i = 1; i < num_procs; i++){
-      MPI_Irecv((void *) &C[convert2D(col, i * subColB, 0)], subRowA * col, MPI_INT, i, 0, MPI_COMM_WORLD, &request);
+      MPI_Recv((void *) &C[convert2D(col, i * BColsPerProc, 0)], ARowsPerProc * col, MPI_INT, i, 0, MPI_COMM_WORLD, &request);
     }
   } else {
-    MPI_Isend((void *) &subC, subRowA * col, MPI_INT, 0, 0, MPI_COMM_WORLD, &request);
+    MPI_Send((void *) &subC, ARowsPerProc * col, MPI_INT, 0, 0, MPI_COMM_WORLD);
   }
 
   MPI_Barrier(MPI_COMM_WORLD);

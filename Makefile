@@ -1,6 +1,6 @@
 CC = gcc-6
 MPI = mpicc
-numProcessors = 4
+numProcessors = 1
 CFLAGS = -I /usr/local/include -L /usr/local/lib -Wall
 matrixSeq: matrix-seq.c
 	$(CC) $(CFLAGS) -o $@ $^
